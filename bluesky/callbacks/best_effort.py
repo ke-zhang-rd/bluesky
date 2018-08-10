@@ -5,6 +5,7 @@
 '''
 from cycler import cycler
 from datetime import datetime
+import functools
 from io import StringIO
 import itertools
 import numpy as np
@@ -15,10 +16,186 @@ import sys
 import time
 from warnings import warn
 import weakref
-
-from .core import CallbackBase, LiveTable
+from collections import deque
+from .core import CallbackBase, Callback, LiveTable, Table, RunRouter
 from .mpl_plotting import LivePlot, LiveGrid, LiveScatter
 from .fitting import PeakStats
+
+
+def guess_dimensions(start_doc):
+    """
+    Parameters
+    ----------
+    Prepare a guess about the dimensions (independent variables).
+    start_doc : dict
+
+    Returns
+    -------
+    dimensions : list
+        looks like a plan's 'dimensions' hint, but guessed from heuristics
+    """
+    motors = start_doc.get('motors')
+    if motors is not None:
+        return [([motor], 'primary') for motor in motors]
+        # For example, if this was a 2D grid scan, we would have:
+        # [(['x'], 'primary'), (['y'], 'primary')]
+    else:
+        # There is no motor, so we will guess this is a time series.
+        return [(['time'], 'primary')]
+
+
+def extract_hints_info(start_doc):
+    """
+    Parameters
+    ----------
+    start_doc : dict
+
+    Returns
+    -------
+    stream_name, dim_fields, all_dim_fields
+    """
+    plan_hints = start_doc.get('hints', {})
+    cleanup_motor_heuristic = False
+
+    # Use the guess if there is not hint about dimensions.
+    dimensions = plan_hints.get('dimensions')
+    if dimensions is None:
+        cleanup_motor_heuristic = True
+        dimensions = guess_dimensions(start_doc)
+
+    # Do all the 'dimensions' belong to the same Event stream? If not, that is
+    # too complicated for this implementation, so we ignore the plan's
+    # dimensions hint and fall back on guessing.
+    if len(set(stream_name for fields, stream_name in dimensions)) != 1:
+        cleanup_motor_heuristic = True
+        dimensions =  guess_dimensions(start_doc)
+        warn("We are ignoring the dimensions hinted because we cannot "
+             "combine streams.")
+
+    # for each dimension, choose one field only
+    # the plan can supply a list of fields. It's assumed the first
+    # of the list is always the one plotted against
+    # fields could be just one field, like ['time'] or ['x'], but for an "inner
+    # product scan", it could be multiple fields like ['x', 'y'] being scanned
+    # over jointly. In that case, we just plot against the first one.
+    dim_fields = [first_field for (first_field, *_), stream_name in dimensions]
+
+    # Make distinction between flattened fields and plotted fields.
+    # Motivation for this is that when plotting, we find dependent variable
+    # by finding elements that are not independent variables
+    all_dim_fields = [field
+                      for fields, stream_name in dimensions
+                           for field in fields]
+
+    # Above we checked that all the dimensions belonged to the same Event
+    # stream, so we can take the stream_name from any item in the list of
+    # dimensions, and we'll get the same result. Might as well use the first
+    # one.
+    _, dim_stream = dimensions[0]  # so dim_stream is like 'primary'
+    # TO DO -- Do we want to return all of these? Maybe we should just return
+    # 'dimensions' and let the various callback_factories do whatever
+    # transformations they need.
+    return dim_stream, dim_fields, all_dim_fields
+
+class HintedPeakStats(Callback):
+    def __init__(self, start_doc, results_callback,  *args, **kwargs):
+        self._start_doc = start_doc
+        self._options = (args, kwargs)
+        self.peaks = dict()
+        self.results_callback = results_callback 
+        super().__init__(start_doc)
+
+    def descriptor(self, doc):
+        # Extract what the columns of the p should be, using the plan hints
+        # in the start_doc and the hints from the Device in this descriptor
+        # doc.
+
+        dim_stream, all_dim_fields, dim_fields = extract_hints_info(self._start_doc)
+        fields = set(list(all_dim_fields) + hinted_fields(doc))
+
+        if doc.get('name') != dim_stream or self.peaks:
+            # We are not interested in this descriptor either because it is not
+            # in the stream we care about or because it is not the *first*
+            # descriptor in that stream.
+            return
+        args, kwargs = self._options
+        columns = hinted_fields(doc)
+        print("colums")
+        print(columns)
+        x, = dim_fields 
+        for y in columns:
+            self.peaks[y] = PeakStats(x, y,  *args, **kwargs)
+            self.peaks[y]('descriptor', doc)
+
+    def __call__(self, name, doc):
+        for item in self.peaks.values():
+            item(name, doc)
+        super().__call__(name, doc)
+
+    def stop(self, doc):
+        print(self.peaks)
+        ATTRS = ('com', 'cen', 'max', 'min', 'fwhm', 'nlls')
+        results = {}
+        for y, peak_stats in self.peaks.items():
+            results[y] = {attr: getattr(peak_stats, attr) for attr in ATTRS}
+        self.results_callback(results)
+
+class HintedTable(Callback):
+    def __init__(self, start_doc, *args, **kwargs):
+        self._start_doc = start_doc
+        self._options = (args, kwargs)
+        self.table = None
+        super().__init__(start_doc)
+
+    def descriptor(self, doc):
+        # Extract what the columns of the table should be, using the plan hints
+        # in the start_doc and the hints from the Device in this descriptor
+        # doc.
+        dim_stream, all_dim_fields, _ = extract_hints_info(self._start_doc)
+        fields = set(list(all_dim_fields) + hinted_fields(doc))
+        if doc.get('name') != dim_stream or self.table is not None:
+            # We are not interested in this descriptor either because it is not
+            # in the stream we care about or because it is not the *first*
+            # descriptor in that stream.
+            return
+        args, kwargs = self._options
+        self.table = Table(self._start_doc, fields, *args, **kwargs)
+
+    def __call__(self, name, doc):
+        super().__call__(name, doc)
+        if self.table is not None:
+            self.table(name, doc)
+
+
+class NewBestEffortCallback(RunRouter):
+    """
+    Automatically configures several callbacks for live feedback.
+
+    Examples
+    --------
+    Create a new RunEngine and subscribe the NewBestEffortCallback.
+    >>> RE = RunEngine({})
+    >>> bec = NewBestEffortCallback()
+    >>> bec.callback_factories.append(my_custom_callback_factory)  # MAYBE??
+    >>> RE.subscribe(bec)
+
+    Another way to add some user-provided stuff:
+    >>> my_run_router = RunRouter([my_custom_callback_factory1, my_custom_callback_factory2])
+    >>> my_run_router.callback_factories.append(my_custom_callback_factory)  # MAYBE??
+    >>> RE.subscribe(my_run_router)
+    """
+    def __init__(self, callback_factories=None):
+
+        self.peaks_list = deque([],maxlen = 10)
+        def results_callback(peaks_results):
+            self.peaks_list.append(peaks_results)
+        if callback_factories is None:
+            callback_factories = []
+        PreparedHintedPeakStats = functools.partial(HintedPeakStats, results_callback=results_callback)
+        defaults = [PreparedHintedPeakStats, HintedTable, HeadingPrinter, BaselinePrinter]
+        #defaults = [HintedTable, HeadingPrinter, BaselinePrinter]
+        # Mix default callback_factories with any user-provided ones.
+        super().__init__(defaults + list(callback_factories))
 
 
 class BestEffortCallback(CallbackBase):
@@ -48,7 +225,7 @@ class BestEffortCallback(CallbackBase):
 
         # public data
         self.peaks = PeakResults()
-
+        self.peaks_list = deque([],maxlen = 10)
         # hack to handle the bottom border of the table
         self._buffer = StringIO()
         self._baseline_toggle = True
@@ -400,7 +577,7 @@ class BestEffortCallback(CallbackBase):
                 ps('stop', doc)
                 ps_by_key[y_key] = ps
         self.peaks.update(ps_by_key)
-
+        self.peaks_list.append(self.peaks)
         for live_plots in self._live_plots.values():
             for live_plot in live_plots.values():
                 live_plot('stop', doc)
@@ -528,6 +705,52 @@ class LivePlotPlusPeaks(LivePlot):
     def stop(self, doc):
         self.check_visibility()
         super().stop(doc)
+
+class HeadingPrinter(Callback):
+    def __init__(self, start_doc):
+        self._start_doc = start_doc
+        # Print heading.
+        tt = datetime.fromtimestamp(self._start_doc['time']).utctimetuple()
+        print("Transient Scan ID: {0}     Time: {1}".format(
+            self._start_doc['scan_id'],
+            time.strftime("%Y/%m/%d %H:%M:%S", tt)))
+        print("Persistent Unique Scan ID: '{0}'".format(
+            self._start_doc['uid']))
+
+
+class BaselinePrinter(Callback):
+    def __init__(self, start_doc, file=sys.stdout):
+        # We accept a start_doc but discard it.
+        self._descriptors = {}
+        self._baseline_toggle = True
+        self._file = file
+
+    def descriptor(self, doc):
+        if doc['name'] == 'baseline':
+            self._descriptors[doc['uid']] = doc
+
+    def event(self, doc):
+        # Check the descriptor uid of this Event using doc['descriptor'].
+        # if this matches the uid of the descriptor we have stashed in the
+        # method above, extract the baseline readings and print them, the way
+        # we do in BestEffortCallback currently.
+        # Show the baseline readings.
+        if doc['descriptor'] in self._descriptors:
+            descriptor = self._descriptors[doc['descriptor']]
+            columns = hinted_fields(descriptor)
+            self._baseline_toggle = not self._baseline_toggle
+            if self._baseline_toggle:
+                subject = 'End-of-run'
+            else:
+                subject = 'Start-of-run'
+            print('{} baseline readings:'.format(subject), file=self._file)
+            border = '+' + '-' * 32 + '+' + '-' * 32 + '+'
+            print(border, file=self._file)
+            for k, v in doc['data'].items():
+                if k not in columns:
+                    continue
+                print('| {:>30} | {:<30} |'.format(k, v), file=self._file)
+            print(border, file=self._file)
 
 
 def hinted_fields(descriptor):

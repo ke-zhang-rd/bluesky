@@ -1,4 +1,5 @@
 from collections import defaultdict
+import functools
 from bluesky.run_engine import Msg, RunEngineInterrupted
 from bluesky.examples import stepscan
 from bluesky.plans import (scan, grid_scan, count, inner_product_scan)
@@ -7,7 +8,8 @@ from bluesky.preprocessors import run_wrapper, subs_wrapper
 from bluesky.plan_stubs import pause
 import bluesky.plans as bp
 from bluesky.callbacks import (CallbackCounter, LiveTable, LiveFit,
-                               LiveFitPlot, LivePlot, LiveGrid, LiveScatter)
+                               LiveFitPlot, LivePlot, LiveGrid, LiveScatter,
+                               Table, RunRouter)
 from bluesky.callbacks import LiveMesh, LiveRaster  # deprecated but tested
 from bluesky.callbacks.broker import BrokerCallbackBase
 from bluesky.callbacks import CallbackBase
@@ -126,7 +128,24 @@ def test_table_warns():
                              'data_keys': {'field': {'dtype': 'array'}}})
 
 
-def test_table(RE, hw):
+class SimpleTableManager:
+    def __call__(self, name, doc):
+        if name == 'start':
+            self.table = functools.partial(Table, fields=['det', 'motor'], min_width=16, extra_pad=2)
+        else:
+            self.table(name, doc)
+
+# A callback factory should take in a start_doc. All the other
+# callback-specific arguments should be set in advance using functools.partial.
+table_factory = functools.partial(
+    Table, fields=['det', 'motor'], min_width=16, extra_pad=2)
+
+@pytest.mark.parametrize(
+    'table',
+    [LiveTable(['det', 'motor'], min_width=16, extra_pad=2),
+     RunRouter([table_factory])
+    ])
+def test_table(RE, hw, table):
 
     with _print_redirect() as fout:
         hw.det.precision = 2
@@ -134,7 +153,6 @@ def test_table(RE, hw):
         assert hw.det.describe()['det']['precision'] == 2
         assert hw.motor.describe()['motor']['precision'] == 2
 
-        table = LiveTable(['det', 'motor'], min_width=16, extra_pad=2)
         ad_scan = bp.adaptive_scan([hw.det], 'det', hw.motor,
                                    -15, 5, .01, 1, .05,
                                    True)
