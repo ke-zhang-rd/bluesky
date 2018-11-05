@@ -333,6 +333,61 @@ class LiveScatter(CallbackBase):
             self.sc.set_clim(*clim)
 
 
+
+
+class Scatter(CallbackBase):
+    def __init__(self, start_doc, func, shape, color, alpha, ax):
+        self.func = func
+        self.ax = ax
+        self.shape = shape
+        self.color = color
+        self.alpha = alpha 
+    def bulk_events(self, doc):
+        x_coords, y_coords = self.func(doc)
+        self._update(x_coords, y_coords)
+    def event(self, doc):
+        x_coords, y_coords = self.func(doc)
+        self._update(x_coords, y_coords)
+
+    def _update(self, x_coords, y_coords):
+        self.ax.scatter(x_coords, y_coords, self.shape, self.color, self.alpha)
+        plt.show()
+
+
+def scatter_factory(start_doc):
+    hints = start_doc.get('hints', {})
+    callbacks = []
+    fig, ax = plt.subplots()
+    shape = start_doc['shape']
+    color = start_doc['color']
+    alpha = start_doc['alpha']
+    for stream_name, fields in hints:
+        def func(bulk_event):
+            return bulk_event['data']['time'], bulk_event['data']['fields']
+        scatter_back = Scatter(start_doc, func, shape, color, alpha, ax=ax)
+        callbacks.append(scatter_back)
+    return callbacks
+
+
+def event2bulk_event(doc):
+    '''Make a BulkEvent from this Event.
+    Parameters
+    ----------
+    doc : dict
+        The event dictionary that contains the 'data' and 'timestamps'
+        associated with the bulk event.
+    Returns
+    -------
+    bulk_event : dict
+        The bulk event dictionary that contains the 'data' and 'timestamp'
+        associated with the event.
+    '''
+    bulk_event = doc.copy()
+    bulk_event['data'] = {k: np.expand_dims(v, 0)
+                          for k, v in doc['data'].items()}
+    bulk_event['timestamps'] = {k: np.expand_dims(v, 0)
+                                for k, v in doc['timestamps'].items()}
+    return bulk_event
 class LiveMesh(LiveScatter):
     __doc__ = LiveScatter.__doc__
 
@@ -454,6 +509,12 @@ class LiveGrid(CallbackBase):
             self.im.set_clim(np.nanmin(self._Idata), np.nanmax(self._Idata))
 
         self.im.set_array(self._Idata)
+
+
+
+
+
+
 
 
 class LiveRaster(LiveGrid):
