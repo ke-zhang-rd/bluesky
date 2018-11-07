@@ -2,6 +2,7 @@ from .mpl_plotting import Grid, Trajectory
 import numpy as np
 import math
 from matplotlib import pyplot as plt
+import functools
 
 
 def find_figure(start_doc, num_subplots):
@@ -54,7 +55,7 @@ def find_figure(start_doc, num_subplots):
 def hinted_fields_start_doc(start_doc):
     # Figure out which columns to put in the table and/or to plot from the
     # start doc.
-    columns=[]
+    columns = []
     for det in start_doc['detectors']:
         columns.extend([det])
     return columns
@@ -102,9 +103,6 @@ def grid_factory(start_doc):
     x_trajectory = None  # This should be able to take in the path info here.
     y_trajectory = None  # This should be able to take in the path info here.
 
-    print (f'I_names: {I_names}')
-    print (f'axes: {axes}')
-
     for I_num, I_name in enumerate(I_names):
         # Work out which axis to use from axes
         if len(I_names) > 1:
@@ -115,30 +113,33 @@ def grid_factory(start_doc):
             ax = axes
 
         # This section defines the function for the grid callback
-        def func(self, bulk_event):
+        def func(bulk_event, extent=None, shape=None):
             '''This functions takes in a bulk event and returns x_coords,
             y_coords, I_vals lists.
             '''
             # start by working out the scaling between grid pixels and axes
             # units
-            data_range = np.array([float(np.diff(e)) for e in self.extent])
-            y_step, x_step = data_range / [max(1, s - 1) for s in self.shape]
-            x_min = self.extent[0]
-            y_min = self.extent[2]
+            data_range = np.array([float(np.diff(e)) for e in extent])
+            y_step, x_step = data_range / [max(1, s - 1) for s in shape]
+            x_min = extent[0][0]
+            y_min = extent[1][0]
             # define the lists of relevant data from the bulk_event
-            x_vals = bulk_event['data'][dim_names[1]]
-            y_vals = bulk_event['data'][dim_names[0]]
+            x_vals = bulk_event['data'][dim_names[0]]
+            y_vals = bulk_event['data'][dim_names[1]]
             I_vals = bulk_event['data'][I_name]
             x_coords = []
             y_coords = []
 
             for x_val, y_val in zip(x_vals, y_vals):
-                x_coords.append((x_val-x_min)/x_step)
-                y_coords.append((y_val-y_min)/y_step)
+                x_coords.append(int(round((x_val-x_min)/x_step)))
+                y_coords.append(int(round((y_val-y_min)/y_step)))
             return x_coords, y_coords, I_vals  # lists to be returned
 
-        grid_callback = Grid(start_doc, func, shape, ax=ax,
-                             extent=adjusted_extent, origin=origin)
+        grid_callback = Grid(start_doc,
+                             functools.partial(func, extent=extent,
+                                               shape=shape),
+                             shape, ax=ax, extent=adjusted_extent,
+                             origin=origin)
         callbacks.append(grid_callback)
 
         # This section defines the callback for the overlayed path.
