@@ -384,7 +384,7 @@ class Grid(CallbackBase):
             _, ax = plt.subplots()
         self.ax = ax
         self.grid_data = np.full(self.shape, np.nan)
-        self.image, = ax.imshow(self.grid_data, **kwargs)
+        self.image = ax.imshow(self.grid_data, **kwargs)
 
     def bulk_events(self, doc):
         '''
