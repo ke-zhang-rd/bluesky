@@ -1,4 +1,5 @@
-from .mpl_plotting import Grid, Trajectory
+from .mpl_plotting import Grid, Scatter, Trajectory
+import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -46,6 +47,33 @@ def hinted_fields(descriptor):
             fields = descriptor['object_keys'][obj_name]
         columns.extend(fields)
     return columns
+
+
+def scatter_factory(start_doc):
+    hints = start_doc.get('hints', {}) 
+    callbacks = []
+    fig, ax = plt.subplots()
+    axes = [ax]
+    alpha = 0.5 
+    all_dim_names = [field
+                     for fields, stream_name in hints['dimensions']
+                     for field in fields]
+    dim_names = [fields[0]
+                 for fields, stream_name in hints['dimensions']]
+    
+    #I_names = [c for c in hinted_fields(start_doc)
+    #          if c not in all_dim_names]
+    I_names = ['det4']
+    for I_name, ax in zip(I_names, axes):
+        # This section defines the function for the scatter callback
+        def func(self, bulk_event):
+            x_vals = bulk_event['data'][dim_names[1]]
+            y_vals = bulk_event['data'][dim_names[0]]
+            I_vals = bulk_event['data'][I_name]
+            return x_vals, y_vals, I_vals
+        scatter_callback = Scatter(start_doc, func, alpha, ax=ax)
+        callbacks.append(scatter_callback)
+    return callbacks
 
 
 def grid_factory(start_doc):
@@ -124,7 +152,6 @@ def grid_factory(start_doc):
                              extent=adjusted_extent, origin=origin)
         callbacks.append(grid_callback)
 
-        # This section defines the callback for the overlayed path.
         def trajectory_func(self, bulk_event):
             '''This functions takes in a bulk event and returns x_vals, y_vals
             lists.
