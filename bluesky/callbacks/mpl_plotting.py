@@ -7,7 +7,6 @@ import warnings
 
 from .core import CallbackBase, get_obj_fields
 
-
 class Line(CallbackBase):
     """
     Draw a matplotlib Line Arist update it for each Event.
@@ -334,39 +333,23 @@ class LiveScatter(CallbackBase):
 
 
 
-
 class Scatter(CallbackBase):
-    def __init__(self, start_doc, func, shape, color, alpha, ax):
+    def __init__(self, start_doc, func, alpha, ax):
         self.func = func
         self.ax = ax
-        self.shape = shape
-        self.color = color
         self.alpha = alpha 
-    def bulk_events(self, doc):
-        x_coords, y_coords = self.func(doc)
-        self._update(x_coords, y_coords)
+        _, ax = plt.subplots()
+        self.ax = ax
     def event(self, doc):
-        x_coords, y_coords = self.func(doc)
-        self._update(x_coords, y_coords)
+        x, y, I = self.func(doc)
+        self._update(x, y, I)
 
-    def _update(self, x_coords, y_coords):
-        self.ax.scatter(x_coords, y_coords, self.shape, self.color, self.alpha)
+    def _update(self, x, y, I):
+        N = len(x)
+        s = np.random.rand(N)
+        c = np.random.rand(N)
+        self.ax.scatter(x, y, s, c, self.alpha)
         plt.show()
-
-
-def scatter_factory(start_doc):
-    hints = start_doc.get('hints', {})
-    callbacks = []
-    fig, ax = plt.subplots()
-    shape = start_doc['shape']
-    color = start_doc['color']
-    alpha = start_doc['alpha']
-    for stream_name, fields in hints:
-        def func(bulk_event):
-            return bulk_event['data']['time'], bulk_event['data']['fields']
-        scatter_back = Scatter(start_doc, func, shape, color, alpha, ax=ax)
-        callbacks.append(scatter_back)
-    return callbacks
 
 
 def event2bulk_event(doc):
