@@ -1,4 +1,5 @@
 from .mpl_plotting import Grid, Scatter, Trajectory
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -50,28 +51,30 @@ def hinted_fields(descriptor):
 
 
 def scatter_factory(start_doc):
+    '''
+    This is a callback factory for 'scatter' plots. It takes in a start_doc and 
+    return a list of callbacks that have been initialized based on its contents.
+    '''
     hints = start_doc.get('hints', {}) 
     callbacks = []
-    fig, ax = plt.subplots()
-    axes = [ax]
-    alpha = 0.5 
-    all_dim_names = [field
-                     for fields, stream_name in hints['dimensions']
-                     for field in fields]
+    #dim_names are the x axis and y axis 
     dim_names = [fields[0]
                  for fields, stream_name in hints['dimensions']]
-    
-    #I_names = [c for c in hinted_fields(start_doc)
-    #          if c not in all_dim_names]
-    I_names = ['det4']
+    I_names = start_doc['detectors']
+    #In case multi dectectors is using here
+    axes = []
+    for i in range(len(I_names)):
+        fig, ax = plt.subplots()
+        axes.append(ax)
     for I_name, ax in zip(I_names, axes):
         # This section defines the function for the scatter callback
-        def func(self, bulk_event):
+        def func(bulk_event):
+            #NOTE: the order of motor(dimensions) in RE is reversed here
             x_vals = bulk_event['data'][dim_names[1]]
             y_vals = bulk_event['data'][dim_names[0]]
             I_vals = bulk_event['data'][I_name]
             return x_vals, y_vals, I_vals
-        scatter_callback = Scatter(start_doc, func, alpha, ax=ax)
+        scatter_callback = Scatter(start_doc, func, ax=ax)
         callbacks.append(scatter_callback)
     return callbacks
 
