@@ -114,7 +114,7 @@ class RunRouter(CallbackBase):
     """
     def __init__(self, callback_factories):
         self.callback_factories = callback_factories
-        self.callbacks = defaultdict(list)  # start uid -> callbacks
+        self.callbacks = defaultdict(list)  # start uid -> callback_list
         self.descriptors = {}  # descriptor uid -> start uid
         self.resources = {}  # resource uid -> start uid
 
@@ -180,11 +180,11 @@ class RunRouter(CallbackBase):
 
     def start(self, doc):
         for callback_factory in self.callback_factories:
-            cb = callback_factory(doc)
-            if cb is None:
+            cbs = callback_factory(doc)
+            if cbs is None:
                 # The callback_factory is not interested in this run.
                 continue
-            self.callbacks[doc['uid']].append(cb)
+            self.callbacks[doc['uid']].append(cbs)
 
     def stop(self, doc):
         start_uid = doc['run_start']
@@ -192,7 +192,6 @@ class RunRouter(CallbackBase):
         all_cbs = self.callbacks.pop(start_uid)
         if not all_cbs:
             return
-        to_remove = []
         for k, v in list(self.descriptors.items()):
             if v == start_uid:
                 del self.descriptors[k]
