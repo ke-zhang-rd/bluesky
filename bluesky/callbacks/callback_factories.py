@@ -155,6 +155,7 @@ def grid_factory(start_doc):
                              extent=adjusted_extent, origin=origin)
         callbacks.append(grid_callback)
 
+        # This section defines the callback for the overlayed path.
         def trajectory_func(self, bulk_event):
             '''This functions takes in a bulk event and returns x_vals, y_vals
             lists.
