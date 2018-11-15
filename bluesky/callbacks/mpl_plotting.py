@@ -332,23 +332,113 @@ class LiveScatter(CallbackBase):
             self.sc.set_clim(*clim)
 
 
-
 class Scatter(CallbackBase):
-    def __init__(self, start_doc, func, alpha, ax):
+    '''
+    Draw a matplotlib AxesImage artist and update it for each event.
+    The purposes of this callback is to create (on initialization) of a
+    matplotlib scatter image and then update it with new data for every `event`
+    or bulk_event.
+
+    Parameters
+    ----------
+    start_doc: dict
+        not used; accepted and dicarded to satisfy callback_factory API.
+    func : callable
+        This must accept a BulkEvent and return three lists of floats (x
+        co-ordinates, y co-ordinates and scatter position intensity values). 
+        The three lists must contain an equal number of items, but that number
+        is arbitrary. That is, a given document may add one new point, no new 
+        points or multiple new points to the plot.
+    single_func : callback, optional
+        This parameter is available as a perfomrance operation. For most uses,
+        ``func`` is sufficient. This is like ``func``, but it gets an Event
+        instead of a BulkEvent. If ``None`` is given, Events are up-cast into
+        BulkEvents and handed to ``func``.
+    ax : matplotlib Axes, optional.
+        if ``None``, a new Figure and Axes are created.
+    **kwargs
+        Passed through to :meth:`Axes.imshow` to style the AxesImage object.
+        '''
+    def __init__(self, start_doc, func, *,
+                single_func=None, ax=None, **kwargs):
         self.func = func
+        self.single_func = single_func
+
+        if ax is None:
+            _, ax = plt.subplots()
+        ax.cla()
         self.ax = ax
-        self.alpha = alpha 
-        _, ax = plt.subplots()
-        self.ax = ax
-    def event(self, doc):
+        self._norm = mcolors.Normalize()
+        self._cmap = 'viridis'
+        self.kwargs = kwargs
+        self._lastx = None
+        self._lasty = None
+
+    def bulk_event(self, doc):
+        '''
+        Takes in a bulk_events document and updates x, y, I with the values
+        returned from self.func(doc)
+
+        Parameters
+        ----------
+        doc : dict
+            The bulk event dictionary that contains the 'data' and 'timestamps'
+            associated with the bulk event.
+
+        Returns
+        -------
+        x, y, I : Lists
+            These are lists of x co-ordinate, y co-ordinate and intensity
+            values arising from the bulk event.
+        '''
         x, y, I = self.func(doc)
         self._update(x, y, I)
 
+    def event(self, doc):
+        '''
+        Takes in a event documents and updates scatter data with the values
+        returned from self.single_func(doc) or, if it is `None`, self.func(doc)
+
+        Parameters
+        ----------
+        doc : dict
+            The bulk event dictionary that contains the 'data' and 'timestamps'
+            associated with the event.
+
+        Returns
+        -------
+        x, y, I : Lists
+            These are lists of x co-ordinate, y co-ordinate and intensity
+            values arising from the event.
+        '''
+        if self.single_func is not None:
+            x, y, I = self.single_func(doc)
+        else:
+            # Make a BulkEvent from this Event and use func.
+            bulk_event = doc.copy()
+            bulk_event['data'] = {k: np.expand_dims(v, 0)
+                                  for k, v in doc['data'].items()}
+            bulk_event['timestamps'] = {k: np.expand_dims(v, 0)
+                                        for k, v in doc['timestamps'].items()}
+            x, y, I = self.func(bulk_event)
+        self._update(x, y, I)
+
     def _update(self, x, y, I):
-        N = len(x)
-        s = np.random.rand(N)
-        c = np.random.rand(N)
-        self.ax.scatter(x, y, s, c, self.alpha)
+        '''
+        Updates plot with the values from the lists x, y, I. Draw trajectory.
+        Parameters
+        ----------
+        x, y, I: Lists
+            These are lists of x co-ordinate, y co-ordinate and intensity
+            values arising from the event. The length of all three lists must
+            be the same.
+        '''
+        self.ax.scatter(x, y, c = I, norm=self._norm, cmap=self._cmap,**self.kwargs)
+        if self._lastx is not None:
+            self.ax.plot([self._lastx, x[0]], [self._lasty, y[0]])
+        self.ax.plot(x, y)
+        self._lastx = x[-1]
+        self._lasty = y[-1]
         plt.show()
 
 

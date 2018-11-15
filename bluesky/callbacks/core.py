@@ -128,12 +128,14 @@ class RunRouter(CallbackBase):
         return self.callbacks[start_uid]
 
     def event(self, doc):
-        for cb in self._event_or_bulk_event(doc):
-            cb('event', doc)
+        for cbs in self._event_or_bulk_event(doc):
+            for cb in cbs:
+                cb('event', doc)
 
     def bulk_event(self, doc):
-        for cb in self._event_or_bulk_event(doc):
-            cb('bulk_event', doc)
+        for cbs in self._event_or_bulk_event(doc):
+            for cb in cbs:
+                cb('bulk_event', doc)
 
     def _datum_or_bulk_datum(self, doc):
         resource_uid = doc['resource']
@@ -145,32 +147,36 @@ class RunRouter(CallbackBase):
         return self.callbacks[start_uid]
 
     def datum(self, doc):
-        for cb in self._datum_or_bulk_datum(doc):
-            cb('datum', doc)
+        for cbs in self._datum_or_bulk_datum(doc):
+            for cb in cbs:
+                cb('datum', doc)
 
     def bulk_datum(self, doc):
-        for cb in self._datum_or_bulk_datum(doc):
-            cb('bulk_datum', doc)
+        for cbs in self._datum_or_bulk_datum(doc):
+            for cb in cbs:
+                cb('bulk_datum', doc)
 
     def descriptor(self, doc):
         start_uid = doc['run_start']
-        cbs = self.callbacks[start_uid]
-        if not cbs:
+        all_cbs = self.callbacks[start_uid]
+        if not all_cbs:
             # This belongs to a run we are not interested in.
             return
         self.descriptors[doc['uid']] = start_uid
-        for cb in cbs:
-            cb('descriptor', doc)
+        for cbs in all_cbs:
+            for cb in cbs:
+                cb('descriptor', doc)
 
     def resource(self, doc):
         start_uid = doc['run_start']
-        cbs = self.callbacks[start_uid]
+        all_cbs = self.callbacks[start_uid]
         if not cbs:
             # This belongs to a run we are not interested in.
             return
         self.resources[doc['uid']] = start_uid
-        for cb in cbs:
-            cb('resource', doc)
+        for cbs in all_cbs:
+            for cb in cbs:
+                cb('resource', doc)
 
     def start(self, doc):
         for callback_factory in self.callback_factories:
@@ -183,8 +189,8 @@ class RunRouter(CallbackBase):
     def stop(self, doc):
         start_uid = doc['run_start']
         # Clean up references.
-        cbs = self.callbacks.pop(start_uid)
-        if not cbs:
+        all_cbs = self.callbacks.pop(start_uid)
+        if not all_cbs:
             return
         to_remove = []
         for k, v in list(self.descriptors.items()):
@@ -193,8 +199,9 @@ class RunRouter(CallbackBase):
         for k, v in list(self.resources.items()):
             if v == start_uid:
                 del self.resources[k]
-        for cb in cbs:
-            cb('stop', doc)
+        for cbs in all_cbs:
+            for cb in cbs:
+                cb('stop', doc)
 
 
 class CallbackCounter:
