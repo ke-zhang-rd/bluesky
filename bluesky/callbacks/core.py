@@ -158,8 +158,8 @@ class RunRouter(CallbackBase):
 
     def descriptor(self, doc):
         start_uid = doc['run_start']
-        all_cbs = self.callbacks[start_uid]
-        if not all_cbs:
+        cbs = self.callbacks[start_uid]
+        if not cbs:
             # This belongs to a run we are not interested in.
             return
         self.descriptors[doc['uid']] = start_uid
@@ -169,7 +169,7 @@ class RunRouter(CallbackBase):
 
     def resource(self, doc):
         start_uid = doc['run_start']
-        all_cbs = self.callbacks[start_uid]
+        cbs = self.callbacks[start_uid]
         if not cbs:
             # This belongs to a run we are not interested in.
             return
@@ -189,8 +189,8 @@ class RunRouter(CallbackBase):
     def stop(self, doc):
         start_uid = doc['run_start']
         # Clean up references.
-        all_cbs = self.callbacks.pop(start_uid)
-        if not all_cbs:
+        cbs = self.callbacks.pop(start_uid)
+        if not cbs:
             return
         for k, v in list(self.descriptors.items()):
             if v == start_uid:
