@@ -10,13 +10,10 @@ import bluesky.plans as bp
 from bluesky.callbacks import (CallbackCounter, LiveTable, LiveFit,
                                LiveFitPlot, LivePlot, LiveGrid, LiveScatter,
                                Table, RunRouter)
+from bluesky.callbacks.callback_factories import (grid_factory)
 from bluesky.callbacks import LiveMesh, LiveRaster  # deprecated but tested
 from bluesky.callbacks.broker import BrokerCallbackBase
-from bluesky.callbacks import CallbackBase
 from bluesky.tests.utils import _print_redirect, MsgCollector, DocCollector
-import signal
-import threading
-import time
 import pytest
 import numpy as np
 import matplotlib.pyplot as plt
@@ -133,11 +130,11 @@ def test_table_warns():
 table_factory = functools.partial(
     Table, fields=['det', 'motor'], min_width=16, extra_pad=2)
 
-@pytest.mark.parametrize(
-    'table',
-    [LiveTable(['det', 'motor'], min_width=16, extra_pad=2),
-     RunRouter([table_factory])
-    ])
+
+@pytest.mark.parametrize('table',
+                         [LiveTable(['det', 'motor'], min_width=16,
+                                    extra_pad=2),
+                          RunRouter([table_factory])])
 def test_table(RE, hw, table):
 
     with _print_redirect() as fout:
@@ -372,6 +369,32 @@ def test_live_grid(RE, hw):
         RE(grid_scan([hw.det4], hw.motor1, -3, 3, 6, hw.motor2,
                      -5, 5, 10, False),
            LiveRaster((6, 10), 'det4'))
+
+
+def test_grid(RE, hw):
+    '''This is a test of `callbacks.mpl_plotting.Grid` and
+    `callback.callback_factories.grid_factory`
+
+    NOTE:
+    1. Eventually once the the process for passing trajectory info down into
+    the callbacks.mpl_plotting.Trajectory callback this will also test this.
+    2. It should also be extended to test for axis flipping and (through the
+    use of the `kwargs`: `extent` and `origin`) once they can be passed down
+    into the callbacks.
+    3. It should finally also include some testing using a non-grid scan
+    (scatter, spiral, square_spiral, fermat_spiral, etc...) after a way to pass
+    the `kwargs`: `extents` and `shape` once they can be passed down into the
+    callbacks
+    '''
+
+    hw.motor1.delay = 0
+    hw.motor2.delay = 0
+
+    token = RE.subscribe(RunRouter([grid_factory]))
+    RE(grid_scan([hw.det4],
+                 hw.motor1, -3, 3, 6,
+                 hw.motor2, -5, 5, 10, False))
+    RE.unsubscribe_lossless(token)
 
 
 def test_live_scatter(RE, hw):

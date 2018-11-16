@@ -34,7 +34,7 @@ class CallbackBase:
     ...         self.counter = 0
     ...
     ...     def event(self, doc):
-    ...         self.counter += 1       
+    ...         self.counter += 1
     ...         print(self.counter)
     """
 
@@ -95,7 +95,7 @@ class RunRouter(CallbackBase):
     ``callback_factory`` whether to return a new callable each time (having a
     lifecycle of one run, garbage collected thereafter), or to return the same
     object every time, or some other pattern.
-    
+
     To summarize, the RunRouter's promise is that it will call each
     ``callback_factory`` with each new RunStart document and that it will
     forward all other documents from that run to whatever ``callback_factory``
@@ -128,13 +128,13 @@ class RunRouter(CallbackBase):
         return self.callbacks[start_uid]
 
     def event(self, doc):
-        for cbs in self._event_or_bulk_event(doc):
-            for cb in cbs:
+        for cb_list in self._event_or_bulk_event(doc):
+            for cb in cb_list:
                 cb('event', doc)
 
     def bulk_event(self, doc):
-        for cbs in self._event_or_bulk_event(doc):
-            for cb in cbs:
+        for cb_list in self._event_or_bulk_event(doc):
+            for cb in cb_list:
                 cb('bulk_event', doc)
 
     def _datum_or_bulk_datum(self, doc):
@@ -147,13 +147,13 @@ class RunRouter(CallbackBase):
         return self.callbacks[start_uid]
 
     def datum(self, doc):
-        for cbs in self._datum_or_bulk_datum(doc):
-            for cb in cbs:
+        for cb_list in self._datum_or_bulk_datum(doc):
+            for cb in cb_list:
                 cb('datum', doc)
 
     def bulk_datum(self, doc):
-        for cbs in self._datum_or_bulk_datum(doc):
-            for cb in cbs:
+        for cb_list in self._datum_or_bulk_datum(doc):
+            for cb in cb_list:
                 cb('bulk_datum', doc)
 
     def descriptor(self, doc):
@@ -163,8 +163,8 @@ class RunRouter(CallbackBase):
             # This belongs to a run we are not interested in.
             return
         self.descriptors[doc['uid']] = start_uid
-        for cbs in all_cbs:
-            for cb in cbs:
+        for cb_list in cbs:
+            for cb in cb_list:
                 cb('descriptor', doc)
 
     def resource(self, doc):
@@ -174,17 +174,17 @@ class RunRouter(CallbackBase):
             # This belongs to a run we are not interested in.
             return
         self.resources[doc['uid']] = start_uid
-        for cbs in all_cbs:
-            for cb in cbs:
+        for cb_list in cbs:
+            for cb in cb_list:
                 cb('resource', doc)
 
     def start(self, doc):
         for callback_factory in self.callback_factories:
-            cbs = callback_factory(doc)
-            if cbs is None:
+            cb_list = callback_factory(doc)
+            if cb_list is None:
                 # The callback_factory is not interested in this run.
                 continue
-            self.callbacks[doc['uid']].append(cbs)
+            self.callbacks[doc['uid']].append(cb_list)
 
     def stop(self, doc):
         start_uid = doc['run_start']
@@ -198,8 +198,8 @@ class RunRouter(CallbackBase):
         for k, v in list(self.resources.items()):
             if v == start_uid:
                 del self.resources[k]
-        for cbs in all_cbs:
-            for cb in cbs:
+        for cb_list in cbs:
+            for cb in cb_list:
                 cb('stop', doc)
 
 
@@ -545,6 +545,7 @@ class LiveTable(Table):
                          print_header_interval=print_header_interval,
                          min_width=min_width, default_prec=default_prec,
                          extra_pad=extra_pad, logbook=logbook, out=out)
+
     def start(self, doc):
         self._rows = []
         self._start = doc

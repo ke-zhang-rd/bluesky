@@ -512,7 +512,7 @@ class Grid(CallbackBase):
             _, ax = plt.subplots()
         self.ax = ax
         self.grid_data = np.full(self.shape, np.nan)
-        self.image, = ax.imshow(self.grid_data, **kwargs)
+        self.image = ax.imshow(self.grid_data, **kwargs)
 
     def bulk_events(self, doc):
         '''
@@ -556,7 +556,7 @@ class Grid(CallbackBase):
             x_coords, y_coords, I_vals = self.single_func(doc)
         else:
             bulk_doc = event2bulk_event(doc)
-            x_coords, y_coords, Ivals = self.func(bulk_doc)
+            x_coords, y_coords, I_vals = self.func(bulk_doc)
 
         self._update(x_coords, y_coords, I_vals)
 
@@ -585,6 +585,7 @@ class Grid(CallbackBase):
             return
 
         # Update grid_data and the plot.
+
         self.grid_data[x_coords, y_coords] = I_vals
         self.image.set_array(self.grid_data)
 
@@ -606,7 +607,7 @@ class LiveGrid(CallbackBase):
     raster_shape : tuple
         The (row, col) shape of the raster
 
-    I : str
+    I_field : str
         The field to use for the color of the markers
 
     clim : tuple, optional
@@ -631,14 +632,14 @@ class LiveGrid(CallbackBase):
     --------
     :class:`bluesky.callbacks.LiveScatter`.
     """
-    def __init__(self, raster_shape, I, *,
+    def __init__(self, raster_shape, I_field, *,
                  clim=None, cmap='viridis',
                  xlabel='x', ylabel='y', extent=None, aspect='equal',
                  ax=None):
         if ax is None:
             fig, ax = plt.subplots()
         ax.cla()
-        self.I = I
+        self.I_field = I_field
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_aspect(aspect)
@@ -691,12 +692,12 @@ class LiveGrid(CallbackBase):
         if self.snaking[1] and (pos[0] % 2):
             pos[1] = self.raster_shape[1] - pos[1] - 1
         pos = tuple(pos)
-        I = doc['data'][self.I]
-        self.update(pos, I)
+        I_val = doc['data'][self.I_field]
+        self.update(pos, I_val)
         super().event(doc)
 
-    def update(self, pos, I):
-        self._Idata[pos] = I
+    def update(self, pos, I_val):
+        self._Idata[pos] = I_val
         if self.clim is None:
             self.im.set_clim(np.nanmin(self._Idata), np.nanmax(self._Idata))
 
